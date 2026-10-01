@@ -14,11 +14,10 @@ function getProperty(event, name) {
 }
 
 function isSEC(event) {
-  const summary = getProperty(event, "SUMMARY");
-  const description = getProperty(event, "DESCRIPTION");
-
-  return /\bSEC\b/i.test(`${summary}\n${description}`);
+  const t = `${getProperty(event, "SUMMARY")}\n${getProperty(event, "DESCRIPTION")}`;
+  return /\bSEC\b/i.test(t) || !/\bMECA\b/i.test(t);
 }
+
 
 function extractEvents(calendar) {
   const unfolded = unfoldICS(calendar);
