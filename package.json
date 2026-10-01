@@ -1,9 +1,0 @@
-{
-  "name": "cesi-sec-calendar",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Vercel endpoint that proxies the CESI FISA timetable and returns only SEC events as iCalendar.",
-  "engines": {
-    "node": "24.x"
-  }
-}
