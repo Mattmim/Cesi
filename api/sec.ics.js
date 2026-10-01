@@ -1,6 +1,5 @@
 const FEEDS = [
-  "https://cesi-edt.vercel.app/ics/fisa-29-s3e-a5-2026-2027/P1.ics",
-  "https://cesi-edt.vercel.app/ics/fisa-29-s3e-a5-2026-2027/P2.ics"
+  "https://cesi-edt.vercel.app/ics/fisa-29-s3e-a5-2026-2027/P1.ics"
 ];
 
 const CAL_NAME = "CESI FISA 29 S3E A5 - SEC";
