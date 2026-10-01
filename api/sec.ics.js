@@ -13,8 +13,69 @@ function getProperty(block, name) {
   return m ? m[1].trim() : "";
 }
 
+const ROOMS = {
+  Alpha: [
+    "Athéna", "Thésée", "Hélios", "Phoébé", "Orphée", "Prométhée", "Gaïa",
+    "Ouranos", "Hespérides Alpha", "Hespérides Omega", "Pléïades 1",
+    "Pléïades 2", "Eole", "Poseïdon", "Hemera"
+  ],
+  Omega: [
+    "Acapulco", "Carthage", "Bélem", "Honolulu", "Bamako", "La Havane",
+    "Louxor", "Persépolis", "Nouméa", "Cadix", "Bonifacio", "Pétra", "Syracuse"
+  ]
+};
+
 function normalize(s) {
-  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[-_]/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+// Plus longs d'abord (ex. "Hespérides Alpha" avant "Hespérides")
+const ROOM_PATTERNS = Object.entries(ROOMS)
+  .flatMap(([building, list]) =>
+    list.map((name) => ({ building, name, key: normalize(name) }))
+  )
+  .concat([{ building: "Alpha", name: "Hespérides", key: "hesperides" }])
+  .sort((a, b) => b.key.length - a.key.length)
+  .map((r) => ({
+    ...r,
+    re: new RegExp(`(^|[^a-z0-9])${r.key.replace(/ /g, "\\s*")}(?![a-z0-9])`, "g")
+  }));
+
+function findRooms(text) {
+  let t = normalize(text);
+  const found = [];
+  for (const r of ROOM_PATTERNS) {
+    if (r.re.test(t)) {
+      found.push(`${r.building} - ${r.name}`);
+      t = t.replace(r.re, "$1 "); // évite qu'un nom court rematche
+    }
+    r.re.lastIndex = 0;
+  }
+  return found;
+}
+
+function escapeText(s) {
+  return s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,");
+}
+
+// Ajoute "Bâtiment - Salle" en LOCATION, notes inchangées
+function withLocation(event) {
+  const desc = getProperty(event, "DESCRIPTION").replace(/\\n/gi, "\n");
+  const salleLine = (desc.match(/^\s*salles?\s*:\s*(.+)$/im) || [])[1] || "";
+  const source = salleLine || `${getProperty(event, "LOCATION")}\n${desc}`;
+  const found = findRooms(source);
+  if (!found.length) return event;
+
+  const loc = `LOCATION:${escapeText(found.join(" / "))}`;
+  if (/^LOCATION(?:;[^:\r\n]*)?:/m.test(event)) {
+    return event.replace(/^LOCATION(?:;[^:\r\n]*)?:.*$/m, loc);
+  }
+  return event.replace(/END:VEVENT\s*$/, `${loc}\r\nEND:VEVENT`);
 }
 
 // Périodes / missions / semaines en entreprise
@@ -77,7 +138,7 @@ function buildCalendar(sources) {
       const key = getProperty(ev, "UID") || ev;
       if (seen.has(key)) continue;
       seen.add(key);
-      events.push(ev);
+      events.push(withLocation(ev));
     }
   }
 
