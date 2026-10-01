@@ -30,7 +30,7 @@ function extractHeader(calendar) {
   const index = unfolded.indexOf("BEGIN:VEVENT");
 
   if (index === -1) {
-    return unfolded.trim();
+    throw new Error("Invalid source ICS: no VEVENT found");
   }
 
   return unfolded.slice(0, index).trimEnd();
@@ -54,6 +54,30 @@ function buildCalendar(calendars) {
 
   header = replaceOrAddLine(
     header,
+    "VERSION",
+    "VERSION:2.0"
+  );
+
+  header = replaceOrAddLine(
+    header,
+    "PRODID",
+    "PRODID:-//CESI SEC Calendar//FR"
+  );
+
+  header = replaceOrAddLine(
+    header,
+    "CALSCALE",
+    "CALSCALE:GREGORIAN"
+  );
+
+  header = replaceOrAddLine(
+    header,
+    "METHOD",
+    "METHOD:PUBLISH"
+  );
+
+  header = replaceOrAddLine(
+    header,
     "X-WR-CALNAME",
     "X-WR-CALNAME:CESI FISA 29 S3E A5 - SEC"
   );
@@ -61,13 +85,7 @@ function buildCalendar(calendars) {
   header = replaceOrAddLine(
     header,
     "X-WR-CALDESC",
-    "X-WR-CALDESC:Calendrier CESI filtre pour le groupe SEC"
-  );
-
-  header = replaceOrAddLine(
-    header,
-    "PRODID",
-    "PRODID:-//CESI SEC Calendar//FR"
+    "X-WR-CALDESC:Calendrier CESI - groupe SEC"
   );
 
   const events = [];
@@ -89,9 +107,6 @@ function buildCalendar(calendars) {
 
   return [
     header,
-    "VERSION:2.0",
-    "CALSCALE:GREGORIAN",
-    "METHOD:PUBLISH",
     "X-PUBLISHED-TTL:PT1H",
     "REFRESH-INTERVAL;VALUE=DURATION:PT1H",
     ...events,
@@ -99,13 +114,13 @@ function buildCalendar(calendars) {
   ].join("\r\n") + "\r\n";
 }
 
-async function getCalendar() {
+async function fetchCalendar() {
   const responses = await Promise.all(
     FEEDS.map((url) =>
       fetch(url, {
         cache: "no-store",
         headers: {
-          Accept: "text/calendar,text/plain;q=0.9,*/*;q=0.1"
+          Accept: "text/calendar"
         }
       })
     )
@@ -114,88 +129,70 @@ async function getCalendar() {
   for (const response of responses) {
     if (!response.ok) {
       throw new Error(
-        `CESI feed returned HTTP ${response.status}`
+        `CESI source returned HTTP ${response.status}`
       );
     }
   }
 
-  const calendars = await Promise.all(
+  return Promise.all(
     responses.map((response) => response.text())
   );
-
-  const ics = buildCalendar(calendars);
-
-  // Vérification minimale avant de transmettre le calendrier
-  if (
-    !ics.startsWith("BEGIN:VCALENDAR") ||
-    !ics.includes("END:VCALENDAR")
-  ) {
-    throw new Error("Generated ICS is invalid");
-  }
-
-  return ics;
 }
 
-function calendarHeaders() {
+function headers() {
   return {
     "Content-Type": "text/calendar; charset=utf-8",
-    "Cache-Control": "no-store, max-age=0, must-revalidate",
-    "CDN-Cache-Control": "no-store",
-    "Vercel-CDN-Cache-Control": "no-store",
-    "Access-Control-Allow-Origin": "*",
-    "Content-Disposition": 'inline; filename="cesi-sec.ics"'
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0",
+    "Access-Control-Allow-Origin": "*"
   };
+}
+
+/*
+ * Apple Calendar peut utiliser HEAD pour vérifier
+ * l'existence du calendrier avant de s'abonner.
+ *
+ * On répond immédiatement sans appeler CESI.
+ */
+export async function HEAD() {
+  return new Response(null, {
+    status: 200,
+    headers: headers()
+  });
 }
 
 export async function GET() {
   try {
-    const ics = await getCalendar();
+    const calendars = await fetchCalendar();
+    const ics = buildCalendar(calendars);
+
+    if (!ics.startsWith("BEGIN:VCALENDAR\r\n")) {
+      throw new Error("Invalid generated ICS");
+    }
+
+    if (!ics.endsWith("END:VCALENDAR\r\n")) {
+      throw new Error("Invalid generated ICS ending");
+    }
 
     return new Response(ics, {
       status: 200,
-      headers: calendarHeaders()
+      headers: headers()
     });
   } catch (error) {
-    console.error("CESI SEC calendar error:", error);
+    console.error("CESI SEC ICS error:", error);
 
     return new Response(
       "BEGIN:VCALENDAR\r\n" +
       "VERSION:2.0\r\n" +
+      "PRODID:-//CESI SEC Calendar//FR\r\n" +
       "CALSCALE:GREGORIAN\r\n" +
       "METHOD:PUBLISH\r\n" +
-      "PRODID:-//CESI SEC Calendar//FR\r\n" +
-      "X-WR-CALNAME:CESI SEC - ERREUR\r\n" +
-      "BEGIN:VEVENT\r\n" +
-      "UID:cesi-sec-feed-error@vercel\r\n" +
-      "DTSTAMP:20260101T000000Z\r\n" +
-      "DTSTART:20260101T000000Z\r\n" +
-      "DTEND:20260101T000001Z\r\n" +
-      "SUMMARY:Erreur de recuperation du calendrier CESI\r\n" +
-      "DESCRIPTION:Le flux CESI source est momentanement indisponible.\r\n" +
-      "END:VEVENT\r\n" +
       "END:VCALENDAR\r\n",
       {
         status: 502,
-        headers: calendarHeaders()
+        headers: headers()
       }
     );
-  }
-}
-
-export async function HEAD() {
-  try {
-    await getCalendar();
-
-    return new Response(null, {
-      status: 200,
-      headers: calendarHeaders()
-    });
-  } catch (error) {
-    console.error("CESI SEC calendar HEAD error:", error);
-
-    return new Response(null, {
-      status: 502,
-      headers: calendarHeaders()
-    });
   }
 }
