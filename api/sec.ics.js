@@ -13,8 +13,23 @@ function getProperty(block, name) {
   return m ? m[1].trim() : "";
 }
 
-// Garde SEC + cours communs, retire MECA
+function normalize(s) {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+// Périodes / missions / semaines en entreprise
+function isEntreprise(event) {
+  const s = normalize(getProperty(event, "SUMMARY"));
+  return (
+    /^\s*entreprise\b/.test(s) ||
+    /\ben entreprise\b/.test(s) ||
+    /\b(periode|mission|semaine|journee|jour)s?\s+(en\s+)?entreprise\b/.test(s)
+  );
+}
+
+// Garde SEC + cours communs, retire MECA et les périodes entreprise
 function keep(event) {
+  if (isEntreprise(event)) return false;
   const t = `${getProperty(event, "SUMMARY")}\n${getProperty(event, "DESCRIPTION")}`;
   return /\bSEC\b/i.test(t) || !/\bMECA\b/i.test(t);
 }
