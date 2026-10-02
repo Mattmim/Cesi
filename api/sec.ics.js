@@ -17,7 +17,7 @@ const ROOMS = {
   Alpha: [
     "Athéna", "Thésée", "Hélios", "Phoébé", "Orphée", "Prométhée", "Gaïa",
     "Ouranos", "Hespérides Alpha", "Hespérides Omega", "Pléïades 1",
-    "Pléïades 2", "Eole", "Poseïdon", "Hemera"
+    "Pléïades 2", "Eole", "Poseïdon", "Hemera", "Bering"
   ],
   Omega: [
     "Acapulco", "Carthage", "Bélem", "Honolulu", "Bamako", "La Havane",
