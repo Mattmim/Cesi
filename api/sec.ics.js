@@ -23,7 +23,7 @@ const ROOMS = {
     "Acapulco", "Carthage", "Bélem", "Honolulu", "Bamako", "La Havane",
     "Louxor", "Persépolis", "Nouméa", "Cadix", "Bonifacio", "Pétra", "Syracuse"
   ],
-  "BAT 3A UPS": ["G45-G46"]
+  "Bat 3A UPS": ["G45-G46"]
 };
 
 function normalize(s) {
@@ -123,6 +123,85 @@ function blockLines(block) {
   return block.split(/\r?\n/).map((l) => l.trimEnd()).filter(Boolean);
 }
 
+// ---------- Fusion des cours consécutifs ----------
+const MAX_GAP_MIN = 30;   // pause max entre deux créneaux fusionnés
+const MIDI_MIN = 13 * 60; // limite matin / après-midi
+
+function getRawProp(event, name) {
+  const m = event.match(new RegExp(`^${name}((?:;[^:\\r\\n]*)?):(.*)$`, "mi"));
+  return m ? { params: m[1], value: m[2].trim() } : null;
+}
+
+// "20261005T083000" -> { day: "20261005", min: 510 } (heure locale uniquement)
+function parseLocal(prop) {
+  if (!prop) return null;
+  const m = prop.value.match(/^(\d{8})T(\d{2})(\d{2})\d{2}$/);
+  return m ? { day: m[1], min: +m[2] * 60 + +m[3] } : null;
+}
+
+function setProp(event, name, value) {
+  const re = new RegExp(`^${name}(?:;[^:\\r\\n]*)?:.*$`, "m");
+  return re.test(event)
+    ? event.replace(re, value)
+    : event.replace(/END:VEVENT\s*$/, `${value}\r\nEND:VEVENT`);
+}
+
+function mergeDescriptions(a, b) {
+  if (!b || a === b) return a;
+  const lines = a ? a.split("\\n") : [];
+  for (const l of b.split("\\n")) if (!lines.includes(l)) lines.push(l);
+  return lines.join("\\n");
+}
+
+function mergeConsecutive(events) {
+  const items = events.map((raw) => {
+    const s = getRawProp(raw, "DTSTART");
+    const e = getRawProp(raw, "DTEND");
+    return {
+      raw,
+      start: parseLocal(s),
+      end: parseLocal(e),
+      endProp: e,
+      key: `${getProperty(raw, "SUMMARY")}|${getProperty(raw, "LOCATION")}`
+    };
+  });
+
+  const timed = items.filter((i) => i.start && i.end && i.start.day === i.end.day);
+  const others = items.filter((i) => !timed.includes(i));
+  timed.sort((a, b) => a.start.day.localeCompare(b.start.day) || a.start.min - b.start.min);
+
+  const out = [];
+  for (const cur of timed) {
+    const prev = out.find(
+      (p) =>
+        p.key === cur.key &&
+        p.end.day === cur.start.day &&
+        cur.start.min >= p.end.min &&
+        cur.start.min - p.end.min <= MAX_GAP_MIN &&
+        (p.start.min < MIDI_MIN) === (cur.start.min < MIDI_MIN)
+    );
+    if (!prev) {
+      out.push({ ...cur });
+      continue;
+    }
+    prev.end = cur.end;
+    prev.raw = setProp(prev.raw, "DTEND", `DTEND${cur.endProp.params}:${cur.endProp.value}`);
+    const desc = mergeDescriptions(getProperty(prev.raw, "DESCRIPTION"), getProperty(cur.raw, "DESCRIPTION"));
+    if (desc) prev.raw = setProp(prev.raw, "DESCRIPTION", `DESCRIPTION:${desc}`);
+  }
+
+  return [...out.map((i) => i.raw), ...others.map((i) => i.raw)];
+}
+
+// ---------- 📝 examens / soutenances ----------
+function withExamPrefix(event) {
+  const summary = getProperty(event, "SUMMARY");
+  if (summary.startsWith("📝")) return event;
+  const t = normalize(`${summary}\n${getProperty(event, "DESCRIPTION")}`);
+  if (!/\b(examen|soutenance)s?\b/.test(t)) return event;
+  return setProp(event, "SUMMARY", `SUMMARY:📝 ${summary}`);
+}
+
 function buildCalendar(sources) {
   let vtimezone = null;
   const events = [];
@@ -154,7 +233,7 @@ function buildCalendar(sources) {
     "X-PUBLISHED-TTL:PT1H",
     "REFRESH-INTERVAL;VALUE=DURATION:PT1H",
     ...(vtimezone ? blockLines(vtimezone) : []),
-    ...events.flatMap(blockLines),
+    ...mergeConsecutive(events).map(withExamPrefix).flatMap(blockLines),
     "END:VCALENDAR"
   ];
 
