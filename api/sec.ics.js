@@ -23,7 +23,7 @@ const ROOMS = {
     "Acapulco", "Carthage", "Bélem", "Honolulu", "Bamako", "La Havane",
     "Louxor", "Persépolis", "Nouméa", "Cadix", "Bonifacio", "Pétra", "Syracuse"
   ],
-  "UPS BAT 3A": ["G45-G46"]
+  "BAT 3A UPS": ["G45-G46"]
 };
 
 function normalize(s) {
