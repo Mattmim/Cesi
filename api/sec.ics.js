@@ -162,7 +162,8 @@ function mergeConsecutive(events) {
       start: parseLocal(s),
       end: parseLocal(e),
       endProp: e,
-      key: `${getProperty(raw, "SUMMARY")}|${getProperty(raw, "LOCATION")}`
+      key: getProperty(raw, "SUMMARY"),
+      loc: getProperty(raw, "LOCATION")
     };
   });
 
@@ -175,6 +176,7 @@ function mergeConsecutive(events) {
     const prev = out.find(
       (p) =>
         p.key === cur.key &&
+        (!p.loc || !cur.loc || p.loc === cur.loc) && // salle différente explicite = pas de fusion
         p.end.day === cur.start.day &&
         cur.start.min >= p.end.min &&
         cur.start.min - p.end.min <= MAX_GAP_MIN &&
@@ -185,6 +187,10 @@ function mergeConsecutive(events) {
       continue;
     }
     prev.end = cur.end;
+    if (!prev.loc && cur.loc) {
+      prev.loc = cur.loc;
+      prev.raw = setProp(prev.raw, "LOCATION", `LOCATION:${cur.loc}`);
+    }
     prev.raw = setProp(prev.raw, "DTEND", `DTEND${cur.endProp.params}:${cur.endProp.value}`);
     const desc = mergeDescriptions(getProperty(prev.raw, "DESCRIPTION"), getProperty(cur.raw, "DESCRIPTION"));
     if (desc) prev.raw = setProp(prev.raw, "DESCRIPTION", `DESCRIPTION:${desc}`);
